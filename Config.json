@@ -1,0 +1,14 @@
+{
+    "program_setup": {
+        "version": "1.0.0",
+        "author": "Your Name",
+        "settings": {
+            "logs_folder": "Logs",
+            "alarm_text": "ATH was interrupted because crane is not in auto mode",
+            "source": "ASC012L",
+            "option3": "default"
+        },
+        "dependencies": [],
+        "last_updated": "2023-10-01T00:00:00Z"
+    }
+}
