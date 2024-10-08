@@ -2,6 +2,7 @@ import json
 import os
 import re
 import pprint
+from datetime import datetime
 
 def main():
     # Read the config.json file
@@ -12,13 +13,9 @@ def main():
     logs_folder = config['program_setup']['settings']['logs_folder']
     source = config['program_setup']['settings']['source']
     parsing_output_file = find_parsing_output_file(logs_folder, source)
+    stack_name = get_stack_name_from_source(config)
 
     pattern = re.compile(rf'''
-    Parsed:\s<proto\smessage="GUI\.JobOrder">\s*
-    id\s*{{\s*
-    id:\s"(?P<id>[^"]+)"\s*
-    update_counter:\s(?P<update_counter>\d+)\s*
-    }}\s*
     che_name:\s"(?P<che_name>{source})"\s*
     steps\s*{{\s*
     step_id:\s(?P<step_id>\d+)\s*
@@ -84,6 +81,10 @@ def main():
     else:
         print("No matching jobs info found.")
 
+def get_stack_name_from_source(config):
+    stack_name = config['program_setup']['settings']['source']
+    return stack_name
+
 def search_and_extract(logs_folder, pattern, logs_with_alarms):
     matches = []
     for log_file, timestamp in logs_with_alarms:
@@ -99,7 +100,7 @@ def search_and_extract(logs_folder, pattern, logs_with_alarms):
                     match = search_pattern_backwards(log_text, line_number, pattern)
                     if match:
                         print("Match found:")
-                        pprint.pprint(match)
+                        # pprint.pprint(match)
                         matches.append(match)
                     else:
                         print("No match found.")
@@ -113,7 +114,7 @@ def search_and_extract(logs_folder, pattern, logs_with_alarms):
                             prev_match = search_pattern_backwards(prev_log_text, len(prev_log_text.splitlines()), pattern)
                             if prev_match:
                                 print(f"Match found in previous log file: {previous_log_file}")
-                                pprint.pprint(prev_match)
+                                # print.pprint(prev_match)
                                 matches.append(prev_match)
                             else:
                                 print("No match found in previous log file.")
@@ -185,6 +186,9 @@ def find_parsing_output_file(logs_folder, source):
 
 def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
     lines = log_content.splitlines()
+    # Define the timestamp pattern
+    timestamp_pattern = re.compile(r'(\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}\.\d{3})')
+
     # Iterate from the start line backwards
     for i in range(start_line, -1, -1):
         # Join a window of lines to search for multiline patterns
@@ -192,7 +196,14 @@ def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
         match = pattern.search(chunk)
         if match:
             result = match.groupdict()
-            result['timestamp'] = lines[start_line - 1].split()[0]  # Assuming the timestamp is at the start of the line
+            # Extract the timestamp from the line before the matched pattern
+            previous_line = lines[max(0, i - 1)]
+            timestamp_match = timestamp_pattern.search(previous_line)
+            if timestamp_match:
+                timestamp_str = timestamp_match.group(1)
+                # Convert the timestamp string to a datetime object
+                timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
+                result['timestamp'] = timestamp
             return result
     return None
 
