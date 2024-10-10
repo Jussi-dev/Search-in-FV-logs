@@ -2,6 +2,7 @@ import json
 import os
 import re
 import pprint
+import pandas as pd
 from datetime import datetime
 
 def main():
@@ -13,10 +14,11 @@ def main():
     logs_folder = config['program_setup']['settings']['logs_folder']
     source = config['program_setup']['settings']['source']
     parsing_output_file = find_parsing_output_file(logs_folder, source)
-    stack_name = get_stack_name_from_source(config)
 
-    pattern = re.compile(rf'''
-    che_name:\s"(?P<che_name>{source})"\s*
+    pattern_job_order = re.compile(rf'{source}m/{source}b:\d+')
+
+    
+    pattern_ls_job = re.compile(rf'''
     steps\s*{{\s*
     step_id:\s(?P<step_id>\d+)\s*
     type:\s(?P<type>[A-Z]+)\s*
@@ -49,6 +51,9 @@ def main():
     pnr_passed:\s(?P<pnr_passed>\w+)\s*
 ''', re.VERBOSE)
 
+    # Search for the folder with 'parsing-output' in its name
+    parsing_output_file = find_parsing_output_file(logs_folder, source)
+
     # Extract alarm timestamps from the parsing output file
     if parsing_output_file:
         alarm_text = config['program_setup']['settings']['alarm_text']   
@@ -71,58 +76,108 @@ def main():
         # Search for the pattern in the FV log files
         if fv_log_folder:
             print(f"Found FV log folder: {fv_log_folder}")
-            matching_jobs_info = search_and_extract(logs_folder, pattern, logs_with_alarms)
+            matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms)
         else:
             print(f"FV log folder ({fv_log_folder}) not found.")
 
     if matching_jobs_info:
-        print("Matching jobs info:")
-        pprint.pprint(matching_jobs_info)
+        df_matching_jobs_info = pd.DataFrame(matching_jobs_info)
+        print(df_matching_jobs_info)
+        matching_jobs_list = []
+        for job_info in matching_jobs_info:
+            matching_job = init_measure_results_data()
+            matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
+            matching_job['Task_str'] = transform_job_type(job_info)
+            matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
+            matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
+
+            matching_jobs_list.append(matching_job)
     else:
         print("No matching jobs info found.")
 
-def get_stack_name_from_source(config):
-    stack_name = config['program_setup']['settings']['source']
-    return stack_name
+    if matching_jobs_list:
+        df_matching_jobs = pd.DataFrame(matching_jobs_list)
+        df_matching_jobs.to_excel('Output/matching_jobs.xlsx', index=False)
+    
 
-def search_and_extract(logs_folder, pattern, logs_with_alarms):
+def transform_job_type(job_info):
+    job_type_mapping = {
+        'GROUND': 'Place',
+        'PICK': 'Pick',
+        # Add other mappings as needed
+    }
+    return job_type_mapping.get(job_info['type'], 'Unknown')
+
+def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
+    lines = log_content.splitlines()
+    timestamp_pattern = re.compile(r'(\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}\.\d{3})')
+
+    for i in range(start_line, -1, -1):
+        chunk = '\n'.join(lines[max(0, i-window_size+1):i+1])
+        match = pattern.search(chunk)
+        if match:
+            result = match.groupdict()
+            timestamp_match = timestamp_pattern.search(lines[max(0, i - 1)])
+            if timestamp_match:
+                timestamp_str = timestamp_match.group(1)
+                timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
+                result['timestamp'] = timestamp
+            return result
+    return None
+
+def search_pattern_forwards(log_content, start_line, pattern, window_size=60):
+    lines = log_content.splitlines()
+    for i in range(start_line, len(lines)):
+        chunk = '\n'.join(lines[i:min(len(lines), i+window_size)])
+        match = pattern.search(chunk)
+        if match:
+            return match.groupdict()
+    return None
+
+def search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms):
     matches = []
     for log_file, timestamp in logs_with_alarms:
         with open(log_file) as file:
             log_text = file.read()
-            # Search for the timestamp in the log file
             for line_number, line in enumerate(log_text.splitlines(), start=1):
-                # Check if the line contains the timestamp
                 if timestamp in line:
                     print(f"Found timestamp: {timestamp} in file: {log_file} at line number: {line_number}")
                     print(line)
-                    # Search for the pattern in the log file
-                    match = search_pattern_backwards(log_text, line_number, pattern)
-                    if match:
-                        print("Match found:")
-                        # pprint.pprint(match)
-                        matches.append(match)
+                    match_job_order = search_pattern_backwards(log_text, line_number, pattern_job_order, window_size=2)
+                    if match_job_order:
+                        print("Match found for pattern_job_order:")
+                        match_ls_job = search_pattern_forwards(log_text, line_number, pattern_ls_job, window_size=60)
+                        if match_ls_job:
+                            print("Match found for pattern_ls_job:")
+                            combined_match = {'filename': os.path.basename(log_file), **match_job_order, **match_ls_job}
+                            matches.append(combined_match)
+                            break  # Return only one match per log_file
+                        else:
+                            print("No match found for pattern_ls_job.")
                     else:
-                        print("No match found.")
+                        print("No match found for pattern_job_order.")
                         print("Searching in previous log file...")
-                        # Try to find a match in the previous log file
                         previous_log_file = get_previous_log_file(log_file, logs_folder)
-
                         if previous_log_file:
                             with open(previous_log_file) as prev_file:
                                 prev_log_text = prev_file.read()
-                            prev_match = search_pattern_backwards(prev_log_text, len(prev_log_text.splitlines()), pattern)
-                            if prev_match:
+                            prev_match_job_order = search_pattern_backwards(prev_log_text, len(prev_log_text.splitlines()), pattern_job_order, window_size=2)
+                            if prev_match_job_order:
                                 print(f"Match found in previous log file: {previous_log_file}")
-                                # print.pprint(prev_match)
-                                matches.append(prev_match)
+                                match_ls_job = search_pattern_forwards(prev_log_text, len(prev_log_text.splitlines()), pattern_ls_job, window_size=2)
+                                if match_ls_job:
+                                    print("Match found for pattern_ls_job in previous log file:")
+                                    combined_match = {'filename': os.path.basename(previous_log_file), **prev_match_job_order, **match_ls_job}
+                                    matches.append(combined_match)
+                                    break  # Return only one match per log_file
+                                else:
+                                    print("No match found for pattern_ls_job in previous log file.")
                             else:
                                 print("No match found in previous log file.")
                         else:
                             print("No previous log file found.")
     return matches
 
-    
 def find_fv_log_folder(logs_folder_root, fv_log_folder_name, fv_log_collection_name):
     for root, dirs, files in os.walk(logs_folder_root):
         for dir_name in dirs:
@@ -148,24 +203,23 @@ def get_matching_log_files(logs_folder, results):
 
 def extract_alarm_timestamps(parsing_output_file, alarm_text):
     results = []
+    pattern_results_from = re.compile(r'Results from\s*.*\\(.*):')
+    pattern_alarm_text = re.compile(re.escape(alarm_text))
+
     with open(parsing_output_file) as file:
+        filename = None
         for line in file:
-            # Check if the line contains 'Results from'
-            if "Results from" in line:
+            # Check if the line matches 'Results from'
+            match_results_from = pattern_results_from.search(line)
+            if match_results_from:
                 # Extract the filename part from the line
-                filename = line.split("\\")[-1].rstrip(":\n\r")
-                # Check subsequent lines for alarm_text
-                timestamps = []
-                for subsequent_line in file:
-                    if "Results from" in subsequent_line:
-                        break
-                    if alarm_text in subsequent_line:
-                        # Extract the timestamp part from the line
-                        timestamp = subsequent_line.split()[0].lstrip('*').rstrip(':')
-                        # timestamps.append(timestamp)
-                        results.append({filename: timestamp})
-                # if timestamps:
-                #     results.append({filename: timestamps})
+                filename = match_results_from.group(1)
+            elif filename and pattern_alarm_text.search(line):
+                # Extract the timestamp part from the line
+                timestamp = line.split()[0].lstrip('*').rstrip(':')
+                results.append({filename: timestamp})
+                print(f"Found alarm timestamp: {timestamp} in file: {filename}")
+    print(f"Total number of alarm timestamps found: {len(results)}")
     return results
 
 # Find the parsing output file that corresponds to the source
@@ -182,29 +236,6 @@ def find_parsing_output_file(logs_folder, source):
                         print(f"Found file: {file_name}")
                         return os.path.join(parsing_output_folder, file_name)  # Return the full path to the file
                 break
-    return None
-
-def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
-    lines = log_content.splitlines()
-    # Define the timestamp pattern
-    timestamp_pattern = re.compile(r'(\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}\.\d{3})')
-
-    # Iterate from the start line backwards
-    for i in range(start_line, -1, -1):
-        # Join a window of lines to search for multiline patterns
-        chunk = '\n'.join(lines[max(0, i-window_size+1):i+1])
-        match = pattern.search(chunk)
-        if match:
-            result = match.groupdict()
-            # Extract the timestamp from the line before the matched pattern
-            previous_line = lines[max(0, i - 1)]
-            timestamp_match = timestamp_pattern.search(previous_line)
-            if timestamp_match:
-                timestamp_str = timestamp_match.group(1)
-                # Convert the timestamp string to a datetime object
-                timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
-                result['timestamp'] = timestamp
-            return result
     return None
 
 def get_previous_log_file(current_log_file, logs_folder):
