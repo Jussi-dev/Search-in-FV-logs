@@ -99,6 +99,62 @@ def main():
         df_matching_jobs = pd.DataFrame(matching_jobs_list)
         df_matching_jobs.to_excel('Output/matching_jobs.xlsx', index=False)
     
+    # Load the Measureresult.xlsx file
+    # Search for the .xlsx file that has 'MeasureResult' in the name
+    measureresult_file_path = None
+    for root, _, files in os.walk(os.path.join(logs_folder, 'MeasureResult-parsed')):
+        for file in files:
+            if 'Measureresult' in file and file.endswith('.xlsx'):
+                measureresult_file_path = os.path.join(root, file)
+                break
+        if measureresult_file_path:
+            break
+
+    if measureresult_file_path:
+        measureresult_df = pd.read_excel(measureresult_file_path)
+    else:
+        print("MeasureResult file not found.")
+
+    if measureresult_df is not None:
+        # Filter the Measureresult dataframe to find matching entries
+        filter_measure_results(df_matching_jobs, measureresult_df)
+    else:
+        print("Measureresult dataframe is empty.")
+
+
+def filter_measure_results(df_matching_jobs, measureresult_df):
+    # Initialize a list to store the matched results
+    matched_results = []
+
+    # Iterate over each row in df_matching_jobs
+    for _, job in df_matching_jobs.iterrows():
+        # Filter the Measureresult dataframe to find matching entries
+        filtered_df = measureresult_df[
+                (measureresult_df['Lane'] == job['Lane']) &
+                (measureresult_df['Task_str'] == job['Task_str']) &
+                (measureresult_df['Pos_str'] == job['Pos_str'])
+            ]
+
+        if not filtered_df.empty:
+            # Convert the 'Timestamp' columns to datetime
+            filtered_df.loc[:, 'Timestamp'] = pd.to_datetime(filtered_df['Timestamp'])
+            job_timestamp = pd.to_datetime(job['Timestamp'])
+
+            # Find the entry with the nearest timestamp
+            filtered_df = filtered_df.copy()
+            filtered_df['Time_Diff'] = (filtered_df['Timestamp'] - job_timestamp).abs()
+            nearest_entry = filtered_df.loc[filtered_df['Time_Diff'].idxmin()]
+
+            # Add the nearest entry to the matched results
+            matched_results.append(nearest_entry)
+
+    # Convert the matched results to a DataFrame
+    if matched_results:
+        df_matched_results = pd.DataFrame(matched_results)
+        df_matched_results.to_excel('Output/matched_results.xlsx', index=False)
+        print(df_matched_results)
+    else:
+        print("No matching entries found in Measureresult.xlsx.")
 
 def transform_job_type(job_info):
     job_type_mapping = {
@@ -134,48 +190,38 @@ def search_pattern_forwards(log_content, start_line, pattern, window_size=60):
             return match.groupdict()
     return None
 
-def search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms):
+def search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms, search_depth=2):
     matches = []
     for log_file, timestamp in logs_with_alarms:
-        with open(log_file) as file:
-            log_text = file.read()
-            for line_number, line in enumerate(log_text.splitlines(), start=1):
-                if timestamp in line:
-                    print(f"Found timestamp: {timestamp} in file: {log_file} at line number: {line_number}")
-                    print(line)
-                    match_job_order = search_pattern_backwards(log_text, line_number, pattern_job_order, window_size=2)
-                    if match_job_order:
-                        print("Match found for pattern_job_order:")
-                        match_ls_job = search_pattern_forwards(log_text, line_number, pattern_ls_job, window_size=60)
-                        if match_ls_job:
-                            print("Match found for pattern_ls_job:")
-                            combined_match = {'filename': os.path.basename(log_file), **match_job_order, **match_ls_job}
-                            matches.append(combined_match)
-                            break  # Return only one match per log_file
-                        else:
-                            print("No match found for pattern_ls_job.")
+        combined_log_text = ""
+        current_log_file = log_file
+        
+        # Combine logs up to the search depth
+        for _ in range(search_depth):
+            if current_log_file:
+                with open(current_log_file) as file:
+                    combined_log_text = file.read() + "\n" + combined_log_text
+                current_log_file = get_previous_log_file(current_log_file, logs_folder)
+            else:
+                break
+        
+        for line_number, line in enumerate(combined_log_text.splitlines(), start=1):
+            if timestamp in line:
+                print(f"Found timestamp: {timestamp} in combined logs at line number: {line_number}")
+                print(line)
+                match_job_order = search_pattern_backwards(combined_log_text, line_number, pattern_job_order, window_size=2)
+                if match_job_order:
+                    print("Match found for pattern_job_order:")
+                    match_ls_job = search_pattern_forwards(combined_log_text, line_number, pattern_ls_job, window_size=60)
+                    if match_ls_job:
+                        print("Match found for pattern_ls_job:")
+                        combined_match = {'filename': os.path.basename(log_file), **match_job_order, **match_ls_job}
+                        matches.append(combined_match)
+                        break  # Return only one match per log_file
                     else:
-                        print("No match found for pattern_job_order.")
-                        print("Searching in previous log file...")
-                        previous_log_file = get_previous_log_file(log_file, logs_folder)
-                        if previous_log_file:
-                            with open(previous_log_file) as prev_file:
-                                prev_log_text = prev_file.read()
-                            prev_match_job_order = search_pattern_backwards(prev_log_text, len(prev_log_text.splitlines()), pattern_job_order, window_size=2)
-                            if prev_match_job_order:
-                                print(f"Match found in previous log file: {previous_log_file}")
-                                match_ls_job = search_pattern_forwards(prev_log_text, len(prev_log_text.splitlines()), pattern_ls_job, window_size=2)
-                                if match_ls_job:
-                                    print("Match found for pattern_ls_job in previous log file:")
-                                    combined_match = {'filename': os.path.basename(previous_log_file), **prev_match_job_order, **match_ls_job}
-                                    matches.append(combined_match)
-                                    break  # Return only one match per log_file
-                                else:
-                                    print("No match found for pattern_ls_job in previous log file.")
-                            else:
-                                print("No match found in previous log file.")
-                        else:
-                            print("No previous log file found.")
+                        print("No match found for pattern_ls_job.")
+                else:
+                    print("No match found for pattern_job_order.")
     return matches
 
 def find_fv_log_folder(logs_folder_root, fv_log_folder_name, fv_log_collection_name):
