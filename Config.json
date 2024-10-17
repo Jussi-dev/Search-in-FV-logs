@@ -4,8 +4,9 @@
         "author": "Your Name",
         "settings": {
             "logs_folder": "Logs",
-            "alarm_text": "ATH was interrupted because crane is not in auto mode",
-            "source": "ASC012L",
+            "alarm_text": "Container measurement is required, but container measurement system is not available",
+            "job_area": "stack",
+            "source": "ASC012W",
             "search_depth": 2
         },
         "dependencies": [],
