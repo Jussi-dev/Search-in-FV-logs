@@ -7,7 +7,7 @@
             "alarm_text": "Container measurement is required, but container measurement system is not available",
             "job_area": "stack",
             "source": "ASC012W",
-            "search_depth": 2
+            "search_depth": 1
         },
         "dependencies": [],
         "last_updated": "2023-10-01T00:00:00Z"

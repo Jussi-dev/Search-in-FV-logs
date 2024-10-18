@@ -53,33 +53,30 @@ def main():
     ''', re.VERBOSE)
 
     # Define the pattern for the stack job
-    pattern_stack_job = re.compile(r'''
-        id\s*{\s*
-        id:\s"(?P<id>[^"]+)"\s*
-        update_counter:\s(?P<update_counter>\d+)\s*
-        }\s*
-        che_name:\s"(?P<che_name>[^"]+)"\s*
-        steps\s*{\s*
-        step_id:\s(?P<step_id>\d+)\s*
-        type:\s(?P<type>[A-Z]+)\s*
-        container_ids:\s"(?P<container_ids>[^"]+)"\s*
-        completed:\s(?P<completed>\w+)\s*
-        target\s*{\s*
-        target\s*{\s*
-        stack_position\s*{\s*
-        stack_name:\s"(?P<stack_name>[^"]+)"\s*
-        }\s*
-        }\s*
-        tier:\s"(?P<tier>\d+)"\s*
-        }\s*
-        allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
-        complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
-        (?:estimation_completion:\s*(?P<estimation_completion>\d+)\s*)?
-        pnr_passed:\s(?P<pnr_passed>\w+)\s*
-        }\s*
-''', re.VERBOSE)
+    pattern_stack_job = re.compile(rf'''
+    steps\s*{{\s*
+    step_id:\s(?P<step_id>\d+)\s*
+    type:\s(?P<type>[A-Z]+)\s*
+    container_ids:\s"(?P<container_ids>[^"]+)"\s*
+    completed:\s(?P<completed>\w+)\s*
+    target\s*{{\s*
+    target\s*{{\s*
+    stack_position\s*{{\s*
+    stack_name:\s"(?P<stack_name>[^"]+)"\s*
+    }}\s*
+    }}\s*
+    tier:\s"(?P<tier>\d+)"\s*
+    }}\s*
+    allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
+    complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
+    (?:estimation_completion:\s*(?P<estimation_completion>\d+)\s*)?
+    pnr_passed:\s(?P<pnr_passed>\w+)\s*
+    }}\s*
+    ''', re.VERBOSE)
 
-
+    logs_with_alarms = []
+    matching_jobs_list = []
+    df_matching_jobs = None  # Initialize the variable to store the matching jobs
 
     # Search for the folder with 'parsing-output' in its name
     parsing_output_file = find_parsing_output_file(logs_folder, source)
@@ -97,8 +94,12 @@ def main():
     else:
         print("No alarm timestamps found in the parsing output file.")
 
+    # Initialize the Measureresult list
+    matching_jobs_info = None
+
     # Search for the pattern in the FV log files
     if logs_with_alarms:
+        search_depth = config['program_setup']['settings']['search_depth']
         # fv-log folder path is at program_setup.settings.logs_folder + (folder name containing)'fv-log' + 'logs'
         logs_folder_root = config['program_setup']['settings']['logs_folder']
         # Find the folder with 'fv-log' in its name and 'logs' in its name
@@ -109,10 +110,10 @@ def main():
             job_area = config['program_setup']['settings']['job_area']
             if job_area == 'landside':
                 print("Searching for land-side jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms)
+                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms, search_depth)
             elif job_area == 'stack':
                 print("Searching for stack jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_stack_job, logs_with_alarms)        
+                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_stack_job, logs_with_alarms, search_depth)        
             else:
                 print("No job area recognized.")
         
@@ -165,9 +166,12 @@ def main():
 
 
 def filter_measure_results(df_matching_jobs, measureresult_df):
+    if df_matching_jobs is None:
+        print("No matching jobs to filter.")
+        return
+    
     # Initialize a list to store the matched results
     matched_results = []
-
     # Iterate over each row in df_matching_jobs
     for _, job in df_matching_jobs.iterrows():
         # Filter the Measureresult dataframe to find matching entries
@@ -220,18 +224,21 @@ def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
                 timestamp_str = timestamp_match.group(1)
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
                 result['timestamp'] = timestamp
+            result['line_number'] = i + 1  # Add the line number to the result
             return result
     return None
 
 def search_pattern_forwards(log_content, start_line, pattern, window_size=60):
     lines = log_content.splitlines()
+    print(f"Searching job description from line: {start_line}")
     for i in range(start_line, len(lines)):
         chunk = '\n'.join(lines[i:min(len(lines), i+window_size)])
         match = pattern.search(chunk)
         if match:
+            print(f"Match found at line number: {i + 1}")
             return match.groupdict()
 
-def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_alarms, search_depth=2):
+def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_alarms, search_depth=0):
     matches = []
     for log_file, timestamp in logs_with_alarms:
         with open(log_file) as file:
@@ -243,17 +250,18 @@ def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_al
                 print(line)
                 match_job_order = search_pattern_backwards(log_content, line_number, pattern_job_order, window_size=2)
                 if match_job_order:
-                    print("Match found for pattern_job_order:")
+                    print(f"Match found for pattern_job_order line: {match_job_order['line_number']}")
+                    job_order_line_number = match_job_order['line_number']
                     
                     # Combine logs up to the search depth
                     combined_log_text, combined_log_lines = generate_combined_log(logs_folder, search_depth, log_file, log_content)
                     
                     # Adjust the starting line number for the combined logs
-                    adjusted_line_number = len(combined_log_lines) - len(log_content.splitlines()) + line_number
+                    adjusted_line_number = len(combined_log_lines) - len(log_content.splitlines()) + job_order_line_number
                     
                     match_job = search_pattern_forwards(combined_log_text, adjusted_line_number, pattern_job)
                     if match_job:
-                        print("Match found for pattern_job:")
+                        print("Match found for pattern_job:\n")
                         combined_match = {'filename': os.path.basename(log_file), **match_job_order, **match_job}
                         matches.append(combined_match)
                         break  # Return only one match per log_file
