@@ -4,7 +4,7 @@
         "author": "Your Name",
         "settings": {
             "logs_folder": "Logs",
-            "alarm_text": "Container measurement is required, but container measurement system is not available",
+            "alarm_text": "Container measurement failed ",
             "job_area": "stack",
             "source": "ASC012W",
             "search_depth": 1

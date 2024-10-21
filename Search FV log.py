@@ -77,6 +77,7 @@ def main():
     logs_with_alarms = []
     matching_jobs_list = []
     df_matching_jobs = None  # Initialize the variable to store the matching jobs
+    measureresult_df = None
 
     # Search for the folder with 'parsing-output' in its name
     parsing_output_file = find_parsing_output_file(logs_folder, source)
@@ -121,8 +122,10 @@ def main():
             print(f"FV log folder ({fv_log_folder}) not found.")
 
     if matching_jobs_info:
+        print("Matching jobs info found.")
         df_matching_jobs_info = pd.DataFrame(matching_jobs_info)
         print(df_matching_jobs_info)
+        df_matching_jobs_info.to_excel('Output/matching_jobs_info.xlsx', index=False)
         matching_jobs_list = []
         for job_info in matching_jobs_info:
             matching_job = init_measure_results_data()
@@ -248,27 +251,36 @@ def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_al
             if timestamp in line:
                 print(f"Found timestamp: {timestamp} in log file at line number: {line_number}")
                 print(line)
-                match_job_order = search_pattern_backwards(log_content, line_number, pattern_job_order, window_size=2)
+                
+                # Combine logs up to the search depth
+                combined_log_text, combined_log_lines = generate_combined_log(logs_folder, search_depth, log_file, log_content)
+                
+                # Adjust the starting line number for the combined logs
+                adjusted_line_number = len(combined_log_lines) - len(log_content.splitlines()) + line_number
+                
+                match_job_order = search_pattern_backwards(combined_log_text, adjusted_line_number, pattern_job_order, window_size=2)
                 if match_job_order:
                     print(f"Match found for pattern_job_order line: {match_job_order['line_number']}")
                     job_order_line_number = match_job_order['line_number']
                     
-                    # Combine logs up to the search depth
-                    combined_log_text, combined_log_lines = generate_combined_log(logs_folder, search_depth, log_file, log_content)
-                    
-                    # Adjust the starting line number for the combined logs
-                    adjusted_line_number = len(combined_log_lines) - len(log_content.splitlines()) + job_order_line_number
-                    
-                    match_job = search_pattern_forwards(combined_log_text, adjusted_line_number, pattern_job)
+                    match_job = search_pattern_forwards(combined_log_text, job_order_line_number, pattern_job)
                     if match_job:
                         print("Match found for pattern_job:\n")
                         combined_match = {'filename': os.path.basename(log_file), **match_job_order, **match_job}
+                        
+                        # Calculate the elapsed time from job order to alarm
+                        job_order_timestamp = match_job_order.get('timestamp')
+                        alarm_timestamp = datetime.strptime(timestamp, '%Y-%m-%d_%H.%M.%S.%f')
+                        if job_order_timestamp:
+                            elapsed_time = alarm_timestamp - job_order_timestamp
+                            combined_match['elapsed_time'] = elapsed_time
+                        
                         matches.append(combined_match)
                         break  # Return only one match per log_file
                     else:
                         print("No match found for pattern_job.")
                 else:
-                    print("No match found for pattern_job_order.")
+                    print("No match found for pattern_job_order.\n")
     return matches
 
 def generate_combined_log(logs_folder, search_depth, log_file, log_content):
