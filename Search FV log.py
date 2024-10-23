@@ -227,6 +227,7 @@ def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
                 result['timestamp'] = timestamp
             result['line_number'] = i + 1  # Add the line number to the result
+
             return result
     return None
 
@@ -259,7 +260,7 @@ def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_al
                 
                 match_job_order = search_pattern_backwards(combined_log_text, adjusted_line_number, pattern_job_order, window_size=2)
                 if match_job_order:
-                    print(f"Match found for pattern_job_order line: {match_job_order['line_number']}")
+                    print(f"Match found for pattern_job_order line: {match_job_order['line_number']}, {match_job_order['timestamp']}")
                     job_order_line_number = match_job_order['line_number']
                     
                     match_job = search_pattern_forwards(combined_log_text, job_order_line_number, pattern_job)

@@ -4,9 +4,9 @@
         "author": "Your Name",
         "settings": {
             "logs_folder": "Logs",
-            "alarm_text": "Container measurement failed ",
-            "job_area": "stack",
-            "source": "ASC012W",
+            "alarm_text": "ATH did not receive container landing confirmation",
+            "job_area": "landside",
+            "source": "ASC012L",
             "search_depth": 1
         },
         "dependencies": [],
