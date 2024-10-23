@@ -13,6 +13,13 @@ def main():
     # Search for the folder with 'parsing-output' in its name
     logs_folder = config['program_setup']['settings']['logs_folder']
     source = config['program_setup']['settings']['source']
+    results = None # Initialize the variable to store the alarm timestamps
+    logs_with_alarms = [] # Initialize the variable to store the FV log files with alarms
+    matching_jobs_list = [] # Initialize the variable to store the matching jobs
+    df_matching_jobs = None  # Initialize the variable to store the matching jobs
+    measureresult_df = None
+
+    # Search for the folder with 'parsing-output' in its name
     parsing_output_file = find_parsing_output_file(logs_folder, source)
 
     # Define the pattern for the job order
@@ -73,14 +80,6 @@ def main():
     pnr_passed:\s(?P<pnr_passed>\w+)\s*
     }}\s*
     ''', re.VERBOSE)
-
-    logs_with_alarms = []
-    matching_jobs_list = []
-    df_matching_jobs = None  # Initialize the variable to store the matching jobs
-    measureresult_df = None
-
-    # Search for the folder with 'parsing-output' in its name
-    parsing_output_file = find_parsing_output_file(logs_folder, source)
 
     # Extract alarm timestamps from the parsing output file
     if parsing_output_file:
