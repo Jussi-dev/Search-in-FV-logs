@@ -24,62 +24,145 @@ def main():
 
     # Define the pattern for the job order
     pattern_job_order = re.compile(rf'{source}m/{source}b:\d+')
+
+    # Define the pattern for the event log
+    pattern_event_log = re.compile(rf'''
+    (?P<timestamp>\d{{4}}-\d{{2}}-\d{{2}}_\d{{2}}\.\d{{2}}\.\d{{2}}\.\d{{3}}):\s*\(\d+\):\s*EVENT:\[(?P<source>{source}m/{source}b:\d+)\]\s*\(\d+\s*bytes,\s*\d+\s*tags\)\s*
+    Parsed:\s*<proto\s*message="GUI\.JobOrder">\s*
+    id\s*{{\s*
+    id:\s*"(?P<id>[^"]+)"\s*
+    update_counter:\s*(?P<update_counter>\d+)\s*
+    }}\s*
+    che_name:\s*"(?P<che_name>[^"]+)"\s*
+    ''', re.VERBOSE)
     
     # Define the pattern for the LS job
-    pattern_ls_job = re.compile(rf'''
-    steps\s*{{\s*
+    pattern_ls_job = re.compile(r'''
+    # id\s*{\s*
+    # id:\s*"(?P<id>[^"]+)"\s*
+    # update_counter:\s*(?P<update_counter>\d+)\s*
+    # }\s*
+    # che_name:\s*"(?P<che_name>[^"]+)"\s*
+    (steps\s*{\s*
     step_id:\s(?P<step_id>\d+)\s*
     type:\s(?P<type>[A-Z]+)\s*
     container_ids:\s"(?P<container_ids>[^"]+)"\s*
     completed:\s(?P<completed>\w+)\s*
-    target\s*{{\s*
-    target\s*{{\s*
-    stack_position\s*{{\s*
+    target\s*{\s*
+    target\s*{\s*
+    stack_position\s*{\s*
     stack_name:\s"(?P<stack_name>[^"]+)"\s*
-    }}\s*
-    chassis_position\s*{{\s*
-    lane\s*{{\s*
+    }\s*
+    }\s*
+    tier:\s"(?P<tier>\d+)"\s*
+    }\s*
+    allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
+    complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
+    pnr_passed:\s(?P<pnr_passed>\w+)\s*
+    }\s*)*
+    steps\s*{\s*
+    step_id:\s(?P<step_id_2>\d+)\s*
+    type:\s(?P<type_2>[A-Z]+)\s*
+    container_ids:\s"(?P<container_ids_2>[^"]+)"\s*
+    completed:\s(?P<completed_2>\w+)\s*
+    target\s*{\s*
+    target\s*{\s*
+    stack_position\s*{\s*
+    stack_name:\s"(?P<stack_name_2>[^"]+)"\s*
+    }\s*
+    chassis_position\s*{\s*
+    lane\s*{\s*
     stack_name:\s"(?P<lane_stack_name>[^"]+)"\s*
-    }}\s*
+    }\s*
     type:\s(?P<chassis_type>[A-Z_]+)\s*
     length:\s(?P<length>[A-Z_0-9]+)\s*
     location:\s(?P<location>[A-Z_]+)\s*
     end:\s(?P<end>[A-Z_]+)\s*
-    combination\s*{{\s*
+    combination\s*{\s*
     front:\s(?P<front>[A-Z_0-9]+)\s*
     back:\s(?P<back>[A-Z_0-9]+)\s*
-    }}\s*
-    }}\s*
-    }}\s*
-    tier:\s"(?P<tier>\d+)"\s*
-    }}\s*
-    allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
-    complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
-    estimation_completion:\s(?P<estimation_completion>\d+)\s*
-    pnr_passed:\s(?P<pnr_passed>\w+)\s*
-    ''', re.VERBOSE)
+    }\s*
+    }\s*
+    }\s*
+    tier:\s"(?P<tier_2>\d+)"\s*
+    }\s*
+    allowed_to_complete:\s(?P<allowed_to_complete_2>\w+)\s*
+    complete_with_remote:\s(?P<complete_with_remote_2>\w+)\s*
+    (estimation_completion:\s(?P<estimation_completion_2>\d+)\s*)?
+    pnr_passed:\s(?P<pnr_passed_2>\w+)\s*
+    }\s*
+''', re.VERBOSE)
 
     # Define the pattern for the stack job
-    pattern_stack_job = re.compile(rf'''
-    steps\s*{{\s*
+    pattern_stack_job = re.compile(r'''
+    steps\s*{\s*
     step_id:\s(?P<step_id>\d+)\s*
     type:\s(?P<type>[A-Z]+)\s*
     container_ids:\s"(?P<container_ids>[^"]+)"\s*
     completed:\s(?P<completed>\w+)\s*
-    target\s*{{\s*
-    target\s*{{\s*
-    stack_position\s*{{\s*
+    target\s*{\s*
+    target\s*{\s*
+    stack_position\s*{\s*
     stack_name:\s"(?P<stack_name>[^"]+)"\s*
-    }}\s*
-    }}\s*
+    }\s*
+    # (
+    # chassis_position\s*{\s*
+    # lane\s*{\s*
+    # stack_name:\s"(?P<lane_stack_name>[^"]+)"\s*
+    # }\s*
+    # type:\s(?P<chassis_type>[A-Z_]+)\s*
+    # length:\s(?P<length>[A-Z_0-9]+)\s*
+    # location:\s(?P<location>[A-Z_]+)\s*
+    # end:\s(?P<end>[A-Z_]+)\s*
+    # combination\s*{\s*
+    # front:\s(?P<front>[A-Z_0-9]+)\s*
+    # back:\s(?P<back>[A-Z_0-9]+)\s*
+    # }\s*
+    # }\s*
+    # }\s*
+    # )?
+    (.*)?
     tier:\s"(?P<tier>\d+)"\s*
-    }}\s*
+    }\s*
+    (
     allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
     complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
-    (?:estimation_completion:\s*(?P<estimation_completion>\d+)\s*)?
+    (estimation_completion:\s(?P<estimation_completion_2>\d+)\s*)?
     pnr_passed:\s(?P<pnr_passed>\w+)\s*
-    }}\s*
-    ''', re.VERBOSE)
+    )?
+    }\s*
+    steps\s*{\s*
+    step_id:\s(?P<step_id_2>\d+)\s*
+    type:\s(?P<type_2>[A-Z]+)\s*
+    container_ids:\s"(?P<container_ids_2>[^"]+)"\s*
+    completed:\s(?P<completed_2>\w+)\s*
+    target\s*{\s*
+    target\s*{\s*
+    stack_position\s*{\s*
+    stack_name:\s"(?P<stack_name_2>[^"]+)"\s*
+    }\s*
+    # (chassis_position\s*{\s*
+    # lane\s*{\s*
+    # stack_name:\s"(?P<lane_stack_name_2>[^"]+)"\s*
+    # }\s*
+    # type:\s(?P<chassis_type_2>[A-Z_]+)\s*
+    # length:\s(?P<length_2>[A-Z_0-9]+)\s*
+    # location:\s(?P<location_2>[A-Z_]+)\s*
+    # end:\s(?P<end_2>[A-Z_]+)\s*
+    # combination\s*{\s*
+    # front:\s(?P<front_2>[A-Z_0-9]+)\s*
+    # back:\s(?P<back_2>[A-Z_0-9]+)\s*
+    # }\s*
+    # }\s*
+    # }\s*)?
+    # tier:\s"(?P<tier_2>\d+)"\s*
+    # }\s*
+    # allowed_to_complete:\s(?P<allowed_to_complete_2>\w+)\s*
+    # complete_with_remote:\s(?P<complete_with_remote_2>\w+)\s*
+    # (estimation_completion:\s(?P<estimation_completion_2>\d+)\s*)?
+    # pnr_passed:\s(?P<pnr_passed_2>\w+)\s*
+    # }\s*
+    ''', re.VERBOSE | re.DOTALL)
 
     # Extract alarm timestamps from the parsing output file
     if parsing_output_file:
@@ -110,10 +193,10 @@ def main():
             job_area = config['program_setup']['settings']['job_area']
             if job_area == 'landside':
                 print("Searching for land-side jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_ls_job, logs_with_alarms, search_depth)
+                matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_ls_job, logs_with_alarms, search_depth)
             elif job_area == 'stack':
                 print("Searching for stack jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_job_order, pattern_stack_job, logs_with_alarms, search_depth)        
+                matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_stack_job, logs_with_alarms, search_depth)        
             else:
                 print("No job area recognized.")
         
@@ -210,7 +293,12 @@ def transform_job_type(job_info):
         'PICK': 'Pick',
         # Add other mappings as needed
     }
-    return job_type_mapping.get(job_info['type'], 'Unknown')
+    job_type = job_info.get('type')
+    if job_type:
+        transformed_job = job_type_mapping.get(job_type, 'Unknown')
+    else:
+        transformed_job = 'Unknown'
+    return transformed_job
 
 def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
     lines = log_content.splitlines()
@@ -221,12 +309,12 @@ def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
         match = pattern.search(chunk)
         if match:
             result = match.groupdict()
-            timestamp_match = timestamp_pattern.search(lines[max(0, i - 1)])
-            if timestamp_match:
-                timestamp_str = timestamp_match.group(1)
+            if 'timestamp' in result:
+                timestamp_str = result['timestamp']
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d_%H.%M.%S.%f')
                 result['timestamp'] = timestamp
-            result['line_number'] = i + 1  # Add the line number to the result
+            # Correct the line number to reflect where the matched pattern starts
+            result['line_number'] = max(0, i-window_size+1) + chunk[:match.start()].count('\n') + 1
 
             return result
     return None
@@ -239,7 +327,9 @@ def search_pattern_forwards(log_content, start_line, pattern, window_size=60):
         match = pattern.search(chunk)
         if match:
             print(f"Match found at line number: {i + 1}")
-            return match.groupdict()
+            result = match.groupdict()
+            result['distance_from_start'] = i - start_line
+            return result
 
 def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_alarms, search_depth=0):
     matches = []
@@ -258,7 +348,7 @@ def search_and_extract(logs_folder, pattern_job_order, pattern_job, logs_with_al
                 # Adjust the starting line number for the combined logs
                 adjusted_line_number = len(combined_log_lines) - len(log_content.splitlines()) + line_number
                 
-                match_job_order = search_pattern_backwards(combined_log_text, adjusted_line_number, pattern_job_order, window_size=2)
+                match_job_order = search_pattern_backwards(combined_log_text, adjusted_line_number, pattern_job_order, window_size=8)
                 if match_job_order:
                     print(f"Match found for pattern_job_order line: {match_job_order['line_number']}, {match_job_order['timestamp']}")
                     job_order_line_number = match_job_order['line_number']
