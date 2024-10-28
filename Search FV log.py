@@ -95,6 +95,7 @@ def main():
 
     # Define the pattern for the stack job
     pattern_stack_job = re.compile(r'''
+    # Step 1 
     steps\s*{\s*
     step_id:\s(?P<step_id>\d+)\s*
     type:\s(?P<type>[A-Z]+)\s*
@@ -105,32 +106,32 @@ def main():
     stack_position\s*{\s*
     stack_name:\s"(?P<stack_name>[^"]+)"\s*
     }\s*
-    # (
-    # chassis_position\s*{\s*
-    # lane\s*{\s*
-    # stack_name:\s"(?P<lane_stack_name>[^"]+)"\s*
-    # }\s*
-    # type:\s(?P<chassis_type>[A-Z_]+)\s*
-    # length:\s(?P<length>[A-Z_0-9]+)\s*
-    # location:\s(?P<location>[A-Z_]+)\s*
-    # end:\s(?P<end>[A-Z_]+)\s*
-    # combination\s*{\s*
-    # front:\s(?P<front>[A-Z_0-9]+)\s*
-    # back:\s(?P<back>[A-Z_0-9]+)\s*
-    # }\s*
-    # }\s*
-    # }\s*
-    # )?
-    (.*)?
-    tier:\s"(?P<tier>\d+)"\s*
+    ( # Chassis and lane position are optional
+    chassis_position\s*{\s*
+    lane\s*{\s*
+    stack_name:\s"(?P<lane_stack_name>[^"]+)"\s*
     }\s*
-    (
-    allowed_to_complete:\s(?P<allowed_to_complete>\w+)\s*
-    complete_with_remote:\s(?P<complete_with_remote>\w+)\s*
-    (estimation_completion:\s(?P<estimation_completion_2>\d+)\s*)?
-    pnr_passed:\s(?P<pnr_passed>\w+)\s*
+    type:\s(?P<chassis_type>[A-Z_]+)\s*
+    length:\s(?P<length>[A-Z_0-9]+)\s*
+    location:\s(?P<location>[A-Z_]+)\s*
+    end:\s(?P<end>[A-Z_]+)\s*
+    combination\s*{\s*
+    front:\s(?P<front>[A-Z_0-9]+)\s*
+    back:\s(?P<back>[A-Z_0-9]+)\s*
+    }\s*
+    }\s*
     )?
     }\s*
+    tier:\s"(?P<tier>\d+)"\s*
+    }\s*
+    (?: # DO NOT capture the following section
+    allowed_to_complete:\s(\w+)\s*
+    complete_with_remote:\s(\w+)\s*
+    (estimation_completion:\s(\d+)\s*)?
+    pnr_passed:\s(\w+)\s*
+    )
+    }\s*
+    # Step 2
     steps\s*{\s*
     step_id:\s(?P<step_id_2>\d+)\s*
     type:\s(?P<type_2>[A-Z]+)\s*
@@ -141,27 +142,31 @@ def main():
     stack_position\s*{\s*
     stack_name:\s"(?P<stack_name_2>[^"]+)"\s*
     }\s*
-    # (chassis_position\s*{\s*
-    # lane\s*{\s*
-    # stack_name:\s"(?P<lane_stack_name_2>[^"]+)"\s*
-    # }\s*
-    # type:\s(?P<chassis_type_2>[A-Z_]+)\s*
-    # length:\s(?P<length_2>[A-Z_0-9]+)\s*
-    # location:\s(?P<location_2>[A-Z_]+)\s*
-    # end:\s(?P<end_2>[A-Z_]+)\s*
-    # combination\s*{\s*
-    # front:\s(?P<front_2>[A-Z_0-9]+)\s*
-    # back:\s(?P<back_2>[A-Z_0-9]+)\s*
-    # }\s*
-    # }\s*
-    # }\s*)?
-    # tier:\s"(?P<tier_2>\d+)"\s*
-    # }\s*
-    # allowed_to_complete:\s(?P<allowed_to_complete_2>\w+)\s*
-    # complete_with_remote:\s(?P<complete_with_remote_2>\w+)\s*
-    # (estimation_completion:\s(?P<estimation_completion_2>\d+)\s*)?
-    # pnr_passed:\s(?P<pnr_passed_2>\w+)\s*
-    # }\s*
+    ( # Chassis and lane position are optional
+    chassis_position\s*{\s*
+    lane\s*{\s*
+    stack_name:\s"(?P<lane_stack_name_2>[^"]+)"\s*
+    }\s*
+    type:\s(?P<chassis_type_2>[A-Z_]+)\s*
+    length:\s(?P<length_2>[A-Z_0-9]+)\s*
+    location:\s(?P<location_2>[A-Z_]+)\s*
+    end:\s(?P<end_2>[A-Z_]+)\s*
+    combination\s*{\s*
+    front:\s(?P<front_2>[A-Z_0-9]+)\s*
+    back:\s(?P<back_2>[A-Z_0-9]+)\s*
+    }\s*
+    }\s*
+    )?
+    }\s*
+    tier:\s"(?P<tier_2>\d+)"\s*
+    }\s*
+    (?: # DO NOT capture the following section
+    allowed_to_complete:\s(\w+)\s*
+    complete_with_remote:\s(\w+)\s*
+    (estimation_completion:\s(\d+)\s*)?
+    pnr_passed:\s(\w+)\s*
+    )
+    }\s*
     ''', re.VERBOSE | re.DOTALL)
 
     # Extract alarm timestamps from the parsing output file
@@ -212,10 +217,17 @@ def main():
         for job_info in matching_jobs_info:
             matching_job = init_measure_results_data()
             matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
-            matching_job['Task_str'] = transform_job_type(job_info)
-            if 'lane_stack_name' in job_info:
-                matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
-                matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
+            matching_job['Task_str'] = extract_ls_job_type(job_info)
+            if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
+                if job_info.get('lane_stack_name') is not None:
+                    matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
+                    matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
+                elif job_info.get('lane_stack_name_2') is not None:
+                    matching_job['Lane'] = int(job_info['lane_stack_name_2'].split('.')[1])
+                    matching_job['Pos_str'] = job_info['lane_stack_name_2'].split('.')[2]
+                else:
+                    matching_job['Lane'] = None
+                    matching_job['Pos_str'] = None            
             else:
                 matching_job['Lane'] = None
                 matching_job['Pos_str'] = None
@@ -287,18 +299,26 @@ def filter_measure_results(df_matching_jobs, measureresult_df):
     else:
         print("No matching entries found in Measureresult.xlsx.")
 
-def transform_job_type(job_info):
+def extract_ls_job_type(job_info):
+    # Define the mapping for the job types
     job_type_mapping = {
         'GROUND': 'Place',
         'PICK': 'Pick',
         # Add other mappings as needed
     }
-    job_type = job_info.get('type')
-    if job_type:
+    # Extract the job type from the job_info
+    # Check if the job type is present in the job_info
+    if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
+        # Select the job type based on the presence of 'type' or 'type_2'
+        if job_info.get('lane_stack_name') is not None:
+            job_type = job_info['type']
+        else:
+            job_type = job_info['type_2']
+        # Transform the job type using the mapping
         transformed_job = job_type_mapping.get(job_type, 'Unknown')
     else:
-        transformed_job = 'Unknown'
-    return transformed_job
+        transformed_job = 'No_job_type' # Default to 'Unknown' if job type is not found
+    return transformed_job # Return the transformed job type
 
 def search_pattern_backwards(log_content, start_line, pattern, window_size=37):
     lines = log_content.splitlines()
