@@ -4,10 +4,11 @@
         "author": "Your Name",
         "settings": {
             "logs_folder": "Logs",
-            "alarm_text": "Container measurement is required, but container measurement system is not available",
+            "alarm_text": "Micromovement target is too far away ",
             "job_area": "stack",
-            "source": "ASC012W",
-            "search_depth": 1
+            "source": "ASC012L",
+            "search_depth": 1,
+            "match_time_window_sec": 180
         },
         "dependencies": [],
         "last_updated": "2023-10-01T00:00:00Z"

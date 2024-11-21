@@ -185,28 +185,38 @@ def main():
     # Initialize the Measureresult list
     matching_jobs_info = None
 
-    # Search for the pattern in the FV log files
-    if logs_with_alarms:
-        search_depth = config['program_setup']['settings']['search_depth']
-        # fv-log folder path is at program_setup.settings.logs_folder + (folder name containing)'fv-log' + 'logs'
-        logs_folder_root = config['program_setup']['settings']['logs_folder']
-        # Find the folder with 'fv-log' in its name and 'logs' in its name
-        fv_log_folder = find_fv_log_folder(logs_folder_root, fv_log_folder_name="fv-log", fv_log_collection_name="logs")
+    
+    # Check if "matching_job_info.xlsx" exists in the "Output" folder
+    output_folder = 'Output'
+    matching_job_info_file = os.path.join(output_folder, 'matching_jobs_info.xlsx')
+    if os.path.exists(matching_job_info_file):
+        print(f"\nFile {matching_job_info_file} exists.\n")
+        # Read the matching job info file
+        matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
+    else:
+        print(f"\nFile {matching_job_info_file} does not exist.\n")
         # Search for the pattern in the FV log files
-        if fv_log_folder:
-            print(f"Found FV log folder: {fv_log_folder}")
-            job_area = config['program_setup']['settings']['job_area']
-            if job_area == 'landside':
-                print("Searching for land-side jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_ls_job, logs_with_alarms, search_depth)
-            elif job_area == 'stack':
-                print("Searching for stack jobs.")
-                matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_stack_job, logs_with_alarms, search_depth)        
+        if logs_with_alarms:
+            search_depth = config['program_setup']['settings']['search_depth']
+            # fv-log folder path is at program_setup.settings.logs_folder + (folder name containing)'fv-log' + 'logs'
+            logs_folder_root = config['program_setup']['settings']['logs_folder']
+            # Find the folder with 'fv-log' in its name and 'logs' in its name
+            fv_log_folder = find_fv_log_folder(logs_folder_root, fv_log_folder_name="fv-log", fv_log_collection_name="logs")
+            # Search for the pattern in the FV log files
+            if fv_log_folder:
+                print(f"Found FV log folder: {fv_log_folder}")
+                job_area = config['program_setup']['settings']['job_area']
+                if job_area == 'landside':
+                    print("Searching for land-side jobs.")
+                    matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_ls_job, logs_with_alarms, search_depth)
+                elif job_area == 'stack':
+                    print("Searching for stack jobs.")
+                    matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_stack_job, logs_with_alarms, search_depth)        
+                else:
+                    print("No job area recognized.")
+            
             else:
-                print("No job area recognized.")
-        
-        else:
-            print(f"FV log folder ({fv_log_folder}) not found.")
+                print(f"FV log folder ({fv_log_folder}) not found.")
 
     if matching_jobs_info:
         print("Matching jobs info found.")
@@ -218,11 +228,13 @@ def main():
             matching_job = init_measure_results_data()
             matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
             matching_job['Task_str'] = extract_ls_job_type(job_info)
+
+            # Extract the lane and position from the job_info
             if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
-                if job_info.get('lane_stack_name') is not None:
+                if isinstance(job_info.get('lane_stack_name'), str):
                     matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
                     matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
-                elif job_info.get('lane_stack_name_2') is not None:
+                elif isinstance(job_info.get('lane_stack_name_2'), str):
                     matching_job['Lane'] = int(job_info['lane_stack_name_2'].split('.')[1])
                     matching_job['Pos_str'] = job_info['lane_stack_name_2'].split('.')[2]
                 else:
@@ -257,12 +269,12 @@ def main():
 
     if measureresult_df is not None:
         # Filter the Measureresult dataframe to find matching entries
-        filter_measure_results(df_matching_jobs, measureresult_df)
+        filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
     else:
         print("Measureresult dataframe is empty.")
 
 
-def filter_measure_results(df_matching_jobs, measureresult_df):
+def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window_sec=180):
     if df_matching_jobs is None:
         print("No matching jobs to filter.")
         return
@@ -288,8 +300,11 @@ def filter_measure_results(df_matching_jobs, measureresult_df):
             filtered_df['Time_Diff'] = (filtered_df['Timestamp'] - job_timestamp).abs()
             nearest_entry = filtered_df.loc[filtered_df['Time_Diff'].idxmin()]
 
-            # Add the nearest entry to the matched results
-            matched_results.append(nearest_entry)
+
+            # Filter out nearest_entry if 'Time_Diff' is greater than match_time_window_sec in seconds
+            if nearest_entry['Time_Diff'].total_seconds() <= match_time_window_sec:
+                # Add the nearest entry to the matched results
+                matched_results.append(nearest_entry)
 
     # Convert the matched results to a DataFrame
     if matched_results:
