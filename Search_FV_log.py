@@ -5,14 +5,13 @@ import pprint
 import pandas as pd
 from datetime import datetime
 
-def main():
+def process_fv_logs():
     # Read the config.json file
     with open('config.json', 'r') as file:
         config = json.load(file)
 
     # Search for the folder with 'parsing-output' in its name
-    logs_folder = config['program_setup']['settings']['logs_folder']
-    source = config['program_setup']['settings']['source']
+    logs_folder, source = get_logs_folder_and_source(config)
     results = None # Initialize the variable to store the alarm timestamps
     logs_with_alarms = [] # Initialize the variable to store the FV log files with alarms
     matching_jobs_list = [] # Initialize the variable to store the matching jobs
@@ -20,7 +19,7 @@ def main():
     measureresult_df = None
 
     # Search for the folder with 'parsing-output' in its name
-    parsing_output_file = find_parsing_output_file(logs_folder, source)
+    parsing_output_folder, parsing_output_file = find_parsing_output_file(logs_folder, source)
 
     # Define the pattern for the job order
     pattern_job_order = re.compile(rf'{source}m/{source}b:\d+')
@@ -185,15 +184,17 @@ def main():
     # Initialize the Measureresult list
     matching_jobs_info = None
 
-    
     # Check if "matching_job_info.xlsx" exists in the "Output" folder
     output_folder = 'Output'
     matching_job_info_file = os.path.join(output_folder, 'matching_jobs_info.xlsx')
     if os.path.exists(matching_job_info_file):
         print(f"\nFile {matching_job_info_file} exists.\n")
-        # Read the matching job info file
-        matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
-    else:
+        user_input = input(f"\nFile {matching_job_info_file} exists. Do you want to use it? (y/n): ")
+        if user_input.lower() == 'y':
+            # Read the matching job info file
+            matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
+
+    if matching_jobs_info is None:
         print(f"\nFile {matching_job_info_file} does not exist.\n")
         # Search for the pattern in the FV log files
         if logs_with_alarms:
@@ -272,6 +273,11 @@ def main():
         filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
     else:
         print("Measureresult dataframe is empty.")
+
+def get_logs_folder_and_source(config):
+    logs_folder = config['program_setup']['settings']['logs_folder']
+    source = config['program_setup']['settings']['source']
+    return logs_folder,source
 
 
 def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window_sec=180):
@@ -469,18 +475,24 @@ def extract_alarm_timestamps(parsing_output_file, alarm_text):
 
 # Find the parsing output file that corresponds to the source
 def find_parsing_output_file(logs_folder, source): 
+    parsing_output_folder = find_parsing_output_folder(logs_folder)
+    if parsing_output_folder:
+        for file_name in os.listdir(parsing_output_folder):
+            if source in file_name:
+                parsing_output_file = os.path.join(parsing_output_folder, file_name)
+                print(f"Found file: {file_name}")
+                return parsing_output_folder, parsing_output_file  # Return the full path to the file
+    else:
+        return None
+
+def find_parsing_output_folder(logs_folder):
     for root, dirs, files in os.walk(logs_folder):
         for dir_name in dirs:
             # Check if the folder name contains 'parsing-output'
             if 'parsing-output' in dir_name:
                 parsing_output_folder = os.path.join(root, dir_name)
                 print(f"Found folder: {parsing_output_folder}")
-                # Search for the file that has 'source' in its name
-                for file_name in os.listdir(parsing_output_folder):
-                    if source in file_name:
-                        print(f"Found file: {file_name}")
-                        return os.path.join(parsing_output_folder, file_name)  # Return the full path to the file
-                break
+                return parsing_output_folder
     return None
 
 def get_previous_log_file(current_log_file, logs_folder):
@@ -492,6 +504,29 @@ def get_previous_log_file(current_log_file, logs_folder):
     if current_index > 0:
         return log_files[current_index - 1]
     return None
+
+def list_alarm_names(source_alarm_file):
+    alarm_names = []
+    pattern_alarm_stats = re.compile(r'Statistics for alarms requesting assistance:')
+    pattern_alarm_header = re.compile(r'Count\s*Alarm\s*ID\s*Alarm\s*Text')
+
+
+    with open(source_alarm_file) as file:
+        found_alarm_stats = False
+        for line in file:
+            if not found_alarm_stats:
+                if pattern_alarm_stats.search(line):
+                    found_alarm_stats = True
+            elif pattern_alarm_header.search(line):
+                continue
+            elif line.strip() == '':
+                break
+            else:
+                parts = line.strip().split('\t')
+                if len(parts) > 1:
+                    alarm_names.append(parts[2])
+
+    return alarm_names
 
 def init_measure_results_data():
     measure_results_data = {
@@ -532,4 +567,4 @@ def init_measure_results_data():
 
 # Print the contents of the config file
 if __name__ == '__main__':
-    main()
+    process_fv_logs()
