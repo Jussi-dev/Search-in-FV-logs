@@ -4,4 +4,4 @@ Output/
 Test.py
 Test_text.log
 Config.json
-__pycache__
+__pycache__/
