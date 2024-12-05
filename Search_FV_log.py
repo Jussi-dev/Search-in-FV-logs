@@ -4,8 +4,12 @@ import re
 import pprint
 import pandas as pd
 from datetime import datetime
+import tkinter as tk
+from tkinter import messagebox
 
 def process_fv_logs() -> str:
+    mathced_results_path = None # Initialize the variable to store the matched results file path
+
     # Get config.json absolute path
     config_path = os.path.join(os.path.dirname(__file__), 'config.json')
   
@@ -195,8 +199,7 @@ def process_fv_logs() -> str:
     matching_job_info_file = os.path.join(output_folder, 'matching_jobs_info.xlsx')
     if os.path.exists(matching_job_info_file):
         print(f"\nFile {matching_job_info_file} exists.\n")
-        user_input = input(f"\nFile {matching_job_info_file} exists. Do you want to use it? (y/n): ")
-        if user_input.lower() == 'y':
+        if prompt_existing_info():
             # Read the matching job info file
             print(f"Reading file: {matching_job_info_file}")
             matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
@@ -235,59 +238,63 @@ def process_fv_logs() -> str:
         matching_jobs_info_file_path = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs_info.xlsx')
         df_matching_jobs_info.to_excel(matching_jobs_info_file_path, index=False)
 
-        matching_jobs_list = [] # Initialize the variable to store the matching jobs
-        for job_info in matching_jobs_info:
-            matching_job = init_measure_results_data()
-            matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
-            matching_job['Task_str'] = extract_ls_job_type(job_info)
+        # Prompt the user to proceed with matching the jobs with parsed Measureresults
+        if match_jobs_prompt():
+            matching_jobs_list = [] # Initialize the variable to store the matching jobs
+            for job_info in matching_jobs_info:
+                matching_job = init_measure_results_data()
+                matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                matching_job['Task_str'] = extract_ls_job_type(job_info)
 
-            # Extract the lane and position from the job_info
-            if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
-                if isinstance(job_info.get('lane_stack_name'), str):
-                    matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
-                    matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
-                elif isinstance(job_info.get('lane_stack_name_2'), str):
-                    matching_job['Lane'] = int(job_info['lane_stack_name_2'].split('.')[1])
-                    matching_job['Pos_str'] = job_info['lane_stack_name_2'].split('.')[2]
+                # Extract the lane and position from the job_info
+                if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
+                    if isinstance(job_info.get('lane_stack_name'), str):
+                        matching_job['Lane'] = int(job_info['lane_stack_name'].split('.')[1])
+                        matching_job['Pos_str'] = job_info['lane_stack_name'].split('.')[2]
+                    elif isinstance(job_info.get('lane_stack_name_2'), str):
+                        matching_job['Lane'] = int(job_info['lane_stack_name_2'].split('.')[1])
+                        matching_job['Pos_str'] = job_info['lane_stack_name_2'].split('.')[2]
+                    else:
+                        matching_job['Lane'] = None
+                        matching_job['Pos_str'] = None            
                 else:
                     matching_job['Lane'] = None
-                    matching_job['Pos_str'] = None            
+                    matching_job['Pos_str'] = None
+                matching_jobs_list.append(matching_job) # Append the matching job to the list
+
+            # Convert the matching jobs list to a DataFrame
+            if matching_jobs_list: # Check if the list is not empty
+                df_matching_jobs = pd.DataFrame(matching_jobs_list)
+                matched_jobs_output_file = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs.xlsx')
+                df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
             else:
-                matching_job['Lane'] = None
-                matching_job['Pos_str'] = None
-            matching_jobs_list.append(matching_job)
+                print("No matching jobs found.")
+            
+            # Load the Measureresult.xlsx file
+            # Search for the .xlsx file that has 'MeasureResult' in the name
+            measureresult_file_path = None
+            for root, _, files in os.walk(os.path.join(logs_folder, 'MeasureResult-parsed')):
+                for file in files:
+                    if 'Measureresult' in file and file.endswith('.xlsx'):
+                        measureresult_file_path = os.path.join(root, file)
+                        break
+                if measureresult_file_path:
+                    break
+
+            if measureresult_file_path:
+                measureresult_df = pd.read_excel(measureresult_file_path)
+            else:
+                print("MeasureResult file not found.")
+
+            if measureresult_df is not None:
+                # Filter the Measureresult dataframe to find matching entries
+                mathced_results_path = filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
+            else:
+                print("Measureresult dataframe is empty.")
+        else:
+            print("User chose not to proceed with matching the jobs with parsed Measureresults.")
     else:
         print("No matching jobs info found.")
-
-    if matching_jobs_list:
-        df_matching_jobs = pd.DataFrame(matching_jobs_list)
-        matched_jobs_output_file = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs.xlsx')
-        df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
-    else:
-        print("No matching jobs found.")
-    
-    # Load the Measureresult.xlsx file
-    # Search for the .xlsx file that has 'MeasureResult' in the name
-    measureresult_file_path = None
-    for root, _, files in os.walk(os.path.join(logs_folder, 'MeasureResult-parsed')):
-        for file in files:
-            if 'Measureresult' in file and file.endswith('.xlsx'):
-                measureresult_file_path = os.path.join(root, file)
-                break
-        if measureresult_file_path:
-            break
-
-    if measureresult_file_path:
-        measureresult_df = pd.read_excel(measureresult_file_path)
-    else:
-        print("MeasureResult file not found.")
-
-    if measureresult_df is not None:
-        # Filter the Measureresult dataframe to find matching entries
-        mathced_results_path = filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
-    else:
-        print("Measureresult dataframe is empty.")
-
     print("Processing completed.")
     return mathced_results_path
 
@@ -594,7 +601,22 @@ def init_measure_results_data():
     
     return measure_results_data
 
+# Prompt the user to proceed with matching the jobs with parsed Measureresults
+def match_jobs_prompt():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    user_response = messagebox.askyesno("Proceed", "Do you want to proceed to match the found jobs with parsed Measureresults?")
+    root.destroy()
+    return user_response
 
+# Prompt the user to proceed with existing matching jobs info
+def prompt_existing_info():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    user_response = messagebox.askyesno("Existing matching jobs Info", "Do you want to use the existing matching jobs info?")
+    root.destroy()
+    return user_response
+    
 # Print the contents of the config file
 if __name__ == '__main__':
     process_fv_logs()
