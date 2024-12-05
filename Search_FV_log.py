@@ -5,13 +5,19 @@ import pprint
 import pandas as pd
 from datetime import datetime
 
-def process_fv_logs():
+def process_fv_logs() -> str:
+    # Get config.json absolute path
+    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+  
     # Read the config.json file
-    with open('config.json', 'r') as file:
+    with open(config_path, 'r') as file:
         config = json.load(file)
 
     # Search for the folder with 'parsing-output' in its name
     logs_folder, source = get_logs_folder_and_source(config)
+    # Get logs folder absolute path
+    logs_folder = os.path.join(os.path.dirname(__file__), logs_folder)
+    
     results = None # Initialize the variable to store the alarm timestamps
     logs_with_alarms = [] # Initialize the variable to store the FV log files with alarms
     matching_jobs_list = [] # Initialize the variable to store the matching jobs
@@ -185,24 +191,24 @@ def process_fv_logs():
     matching_jobs_info = None
 
     # Check if "matching_job_info.xlsx" exists in the "Output" folder
-    output_folder = 'Output'
+    output_folder = os.path.join(os.path.dirname(__file__), 'Output')
     matching_job_info_file = os.path.join(output_folder, 'matching_jobs_info.xlsx')
     if os.path.exists(matching_job_info_file):
         print(f"\nFile {matching_job_info_file} exists.\n")
         user_input = input(f"\nFile {matching_job_info_file} exists. Do you want to use it? (y/n): ")
         if user_input.lower() == 'y':
             # Read the matching job info file
+            print(f"Reading file: {matching_job_info_file}")
             matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
+            print(f"Matching jobs info read from file: {matching_job_info_file}, length: {len(matching_jobs_info)}")
 
     if matching_jobs_info is None:
-        print(f"\nFile {matching_job_info_file} does not exist.\n")
+        print(f"\nParsing matching jobs\n")
         # Search for the pattern in the FV log files
         if logs_with_alarms:
             search_depth = config['program_setup']['settings']['search_depth']
-            # fv-log folder path is at program_setup.settings.logs_folder + (folder name containing)'fv-log' + 'logs'
-            logs_folder_root = config['program_setup']['settings']['logs_folder']
             # Find the folder with 'fv-log' in its name and 'logs' in its name
-            fv_log_folder = find_fv_log_folder(logs_folder_root, fv_log_folder_name="fv-log", fv_log_collection_name="logs")
+            fv_log_folder = find_fv_log_folder(logs_folder, fv_log_folder_name="fv-log", fv_log_collection_name="logs")
             # Search for the pattern in the FV log files
             if fv_log_folder:
                 print(f"Found FV log folder: {fv_log_folder}")
@@ -215,16 +221,21 @@ def process_fv_logs():
                     matching_jobs_info = search_and_extract(logs_folder, pattern_event_log, pattern_stack_job, logs_with_alarms, search_depth)        
                 else:
                     print("No job area recognized.")
-            
             else:
                 print(f"FV log folder ({fv_log_folder}) not found.")
+        else:
+            print("No logs with alarms found.")
 
     if matching_jobs_info:
         print("Matching jobs info found.")
         df_matching_jobs_info = pd.DataFrame(matching_jobs_info)
         print(df_matching_jobs_info)
-        df_matching_jobs_info.to_excel('Output/matching_jobs_info.xlsx', index=False)
-        matching_jobs_list = []
+
+        # Save the matching jobs info to an Excel file
+        matching_jobs_info_file_path = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs_info.xlsx')
+        df_matching_jobs_info.to_excel(matching_jobs_info_file_path, index=False)
+
+        matching_jobs_list = [] # Initialize the variable to store the matching jobs
         for job_info in matching_jobs_info:
             matching_job = init_measure_results_data()
             matching_job['Timestamp'] = job_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -250,7 +261,10 @@ def process_fv_logs():
 
     if matching_jobs_list:
         df_matching_jobs = pd.DataFrame(matching_jobs_list)
-        df_matching_jobs.to_excel('Output/matching_jobs.xlsx', index=False)
+        matched_jobs_output_file = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs.xlsx')
+        df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
+    else:
+        print("No matching jobs found.")
     
     # Load the Measureresult.xlsx file
     # Search for the .xlsx file that has 'MeasureResult' in the name
@@ -270,9 +284,12 @@ def process_fv_logs():
 
     if measureresult_df is not None:
         # Filter the Measureresult dataframe to find matching entries
-        filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
+        mathced_results_path = filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
     else:
         print("Measureresult dataframe is empty.")
+
+    print("Processing completed.")
+    return mathced_results_path
 
 def get_logs_folder_and_source(config):
     logs_folder = config['program_setup']['settings']['logs_folder']
@@ -315,10 +332,23 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     # Convert the matched results to a DataFrame
     if matched_results:
         df_matched_results = pd.DataFrame(matched_results)
-        df_matched_results.to_excel('Output/matched_results.xlsx', index=False)
+
+        root_folder = os.path.dirname(__file__) # Get the root folder
+        output_folder = os.path.join(root_folder, 'Output') # Define the output folder
+        if not os.path.exists(output_folder): # Check if the 'Output' folder exists
+            print("No 'Output' folder found. Creating 'Output' folder.")
+            os.makedirs(output_folder)
+        
+        # Save the matched results to an Excel file
+        df_matched_results.to_excel(os.path.join(output_folder, 'matched_results.xlsx'), index=False)
         print(df_matched_results)
     else:
         print("No matching entries found in Measureresult.xlsx.")
+
+    print("Filtering completed.")
+
+    # Return the 'mathced_results.xlsx' file path
+    return os.path.join(output_folder, 'matched_results.xlsx')
 
 def extract_ls_job_type(job_info):
     # Define the mapping for the job types
@@ -331,7 +361,7 @@ def extract_ls_job_type(job_info):
     # Check if the job type is present in the job_info
     if 'lane_stack_name' in job_info or 'lane_stack_name_2' in job_info:
         # Select the job type based on the presence of 'type' or 'type_2'
-        if job_info.get('lane_stack_name') is not None:
+        if job_info.get('lane_stack_name') is not None and pd.notna(job_info['lane_stack_name']): # Check if 'lane_stack_name' is not None or NaN
             job_type = job_info['type']
         else:
             job_type = job_info['type_2']
@@ -474,7 +504,7 @@ def extract_alarm_timestamps(parsing_output_file, alarm_text):
     return results
 
 # Find the parsing output file that corresponds to the source
-def find_parsing_output_file(logs_folder, source): 
+def find_parsing_output_file(logs_folder, source):
     parsing_output_folder = find_parsing_output_folder(logs_folder)
     if parsing_output_folder:
         for file_name in os.listdir(parsing_output_folder):
