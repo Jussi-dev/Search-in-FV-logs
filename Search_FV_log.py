@@ -9,6 +9,7 @@ from tkinter import messagebox
 
 def process_fv_logs() -> str:
     mathced_results_path = None # Initialize the variable to store the matched results file path
+    matching_jobs_info_file_path = None # Initialize the variable to store the matching jobs info file path
 
     # Get config.json absolute path
     config_path = os.path.join(os.path.dirname(__file__), 'config.json')
@@ -296,7 +297,7 @@ def process_fv_logs() -> str:
     else:
         print("No matching jobs info found.")
     print("Processing completed.")
-    return mathced_results_path
+    return mathced_results_path, matching_jobs_info_file_path
 
 def get_logs_folder_and_source(config):
     logs_folder = config['program_setup']['settings']['logs_folder']
