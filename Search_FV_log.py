@@ -309,9 +309,18 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     if df_matching_jobs is None:
         print("No matching jobs to filter.")
         return
-    
+    # Prompt the user to proceed with marking ATH success
+    if mark_ath_success():
+        if ath_success_value():
+            ath_success = 1
+        else:
+            ath_success = 0
+    else:
+        ath_success = None
+
     # Initialize a list to store the matched results
     matched_results = []
+    df_ath_measure_results = measureresult_df.copy() # Copy the Measureresult dataframe
     # Iterate over each row in df_matching_jobs
     for _, job in df_matching_jobs.iterrows():
         # Filter the Measureresult dataframe to find matching entries
@@ -617,6 +626,24 @@ def prompt_existing_info():
     user_response = messagebox.askyesno("Existing matching jobs Info", "Do you want to use the existing matching jobs info?")
     root.destroy()
     return user_response
+
+# Prompt the user with a GUI to mark ATH success, yes or no
+def mark_ath_success():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    user_response = messagebox.askyesno(title="ATH Success", message="Mark ATH success for the matched results?")
+    root.destroy()
+    return user_response
+
+# Prompt the user with a GUI to mark ATH success, 1 or 0
+def ath_success_value():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    user_response = messagebox.askyesno(title="ATH Success", message="Mark ATH success as 1?")
+    root.destroy()
+    return user_response
+
+
     
 # Print the contents of the config file
 if __name__ == '__main__':
