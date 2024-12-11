@@ -7,6 +7,8 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
 
+
+
 def process_fv_logs() -> str:
     mathced_results_path = None # Initialize the variable to store the matched results file path
     matching_jobs_info_file_path = None # Initialize the variable to store the matching jobs info file path
@@ -200,7 +202,7 @@ def process_fv_logs() -> str:
     matching_job_info_file = os.path.join(output_folder, 'matching_jobs_info.xlsx')
     if os.path.exists(matching_job_info_file):
         print(f"\nFile {matching_job_info_file} exists.\n")
-        if prompt_existing_info():
+        if prompt_existing_file("Existing matching jobs Info"):
             # Read the matching job info file
             print(f"Reading file: {matching_job_info_file}")
             matching_jobs_info = pd.read_excel(matching_job_info_file).to_dict(orient='records')
@@ -261,7 +263,7 @@ def process_fv_logs() -> str:
                 else:
                     matching_job['Lane'] = None
                     matching_job['Pos_str'] = None
-                matching_jobs_list.append(matching_job) # Append the matching job to the list
+                matching_jobs_list.append(matching_job)
 
             # Convert the matching jobs list to a DataFrame
             if matching_jobs_list: # Check if the list is not empty
@@ -320,15 +322,29 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
 
     # Initialize a list to store the matched results
     matched_results = []
-    df_ath_measure_results = measureresult_df.copy() # Copy the Measureresult dataframe
-    # Iterate over each row in df_matching_jobs
+    # Initialize a DataFrame to store the ATH measure results
+    try:
+        output_folder = ensure_output_folder()
+        ath_measure_results_file = os.path.join(output_folder, 'Measureresults_ATH.xlsx')
+        if os.path.exists(ath_measure_results_file):
+            # Prompt the user to append to the existing ATH measure results
+            if prompt_existing_file("Existing ATH measure results", "Do you want to append to the existing ATH measure results?"):
+                df_ath_measure_results = pd.read_excel(ath_measure_results_file) # Read the existing DataFrame
+            else: # Create a new DataFrame
+                df_ath_measure_results = measureresult_df.copy()
+        else: # Create a new DataFrame
+            df_ath_measure_results = measureresult_df.copy()
+    except Exception as e:
+        print(f"Error reading or creating ATH measure results DataFrame: {e}")
+        df_ath_measure_results = measureresult_df.copy()
+
+    # Iterate over each row in df_ath_measure_results and compare df_matching_jobs
     for _, job in df_matching_jobs.iterrows():
-        # Filter the Measureresult dataframe to find matching entries
-        filtered_df = measureresult_df[
-                (measureresult_df['Lane'] == job['Lane']) &
-                (measureresult_df['Task_str'] == job['Task_str']) &
-                (measureresult_df['Pos_str'] == job['Pos_str'])
-            ]
+        filtered_df = df_ath_measure_results[
+            (df_ath_measure_results['Lane'] == job['Lane']) &
+            (df_ath_measure_results['Pos_str'] == job['Pos_str']) &
+            (df_ath_measure_results['Task_str'] == job['Task_str'])
+        ]
 
         if not filtered_df.empty:
             # Convert the 'Timestamp' columns to datetime
@@ -340,24 +356,23 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
             filtered_df['Time_Diff'] = (filtered_df['Timestamp'] - job_timestamp).abs()
             nearest_entry = filtered_df.loc[filtered_df['Time_Diff'].idxmin()]
 
-
             # Filter out nearest_entry if 'Time_Diff' is greater than match_time_window_sec in seconds
             if nearest_entry['Time_Diff'].total_seconds() <= match_time_window_sec:
                 # Add the nearest entry to the matched results
                 matched_results.append(nearest_entry)
 
+                # Update the 'ATH_success' column in df_ath_measure_results
+                df_ath_measure_results.loc[nearest_entry.name, 'ATH_success'] = ath_success
+
     # Convert the matched results to a DataFrame
     if matched_results:
         df_matched_results = pd.DataFrame(matched_results)
 
-        root_folder = os.path.dirname(__file__) # Get the root folder
-        output_folder = os.path.join(root_folder, 'Output') # Define the output folder
-        if not os.path.exists(output_folder): # Check if the 'Output' folder exists
-            print("No 'Output' folder found. Creating 'Output' folder.")
-            os.makedirs(output_folder)
+        output_folder = ensure_output_folder()
         
         # Save the matched results to an Excel file
         df_matched_results.to_excel(os.path.join(output_folder, 'matched_results.xlsx'), index=False)
+        df_ath_measure_results.to_excel(os.path.join(output_folder, 'Measureresults_ATH.xlsx'), index=False)
         print(df_matched_results)
     else:
         print("No matching entries found in Measureresult.xlsx.")
@@ -366,6 +381,14 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
 
     # Return the 'mathced_results.xlsx' file path
     return os.path.join(output_folder, 'matched_results.xlsx')
+
+def ensure_output_folder():
+    root_folder = os.path.dirname(__file__) # Get the root folder
+    output_folder = os.path.join(root_folder, 'Output') # Define the output folder
+    if not os.path.exists(output_folder): # Check if the 'Output' folder exists
+        print("No 'Output' folder found. Creating 'Output' folder.")
+        os.makedirs(output_folder)
+    return output_folder
 
 def extract_ls_job_type(job_info):
     # Define the mapping for the job types
@@ -620,10 +643,10 @@ def match_jobs_prompt():
     return user_response
 
 # Prompt the user to proceed with existing matching jobs info
-def prompt_existing_info():
+def prompt_existing_file(title="Existing file", message="Do you want to use the existing file?"):
     root = tk.Tk()
     root.withdraw()  # Hide the root window
-    user_response = messagebox.askyesno("Existing matching jobs Info", "Do you want to use the existing matching jobs info?")
+    user_response = messagebox.askyesno(title, message)
     root.destroy()
     return user_response
 
