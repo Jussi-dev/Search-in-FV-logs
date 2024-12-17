@@ -2,19 +2,51 @@ import json
 import os
 import re
 import pprint
+import threading
 import pandas as pd
 from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
 
+class MyApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("My Application")
+        self.geometry("400x300")
+        self.create_widgets()
+        self.config = self.get_config()
+        self.update_info(self.config)
 
+    def create_widgets(self):
+        self.label = tk.Label(self, text="Hello, Tkinter!")
+        self.lbl_che_id = tk.Label(self, text="CHE ID:")
+        self.lbl_alarm_text = tk.Label(self, text="Alarm Text:")
+        self.button = tk.Button(self, text="Click Me", command=self.on_button_click)
 
-def process_fv_logs() -> str:
+        self.label.pack(pady=10)
+        self.lbl_che_id.pack(pady=10)
+        self.lbl_alarm_text.pack(pady=10)
+        self.button.pack(pady=10)
+
+    def on_button_click(self):
+        messagebox.showinfo("Information", "Button clicked!")
+
+    def get_config(self):
+        config_path = os.path.join(os.path.dirname(__file__), 'Config.json')
+        with open(config_path, 'r') as file:
+            config = json.load(file)
+        pprint.pprint(config)
+        return config
+
+    def update_info(self, config):
+        self.lbl_che_id.config(text=f"CHE ID: {config['program_setup']['settings']['source']}")
+        self.lbl_alarm_text.config(text=f"Alarm Text: {config['program_setup']['settings']['alarm_text']}")
+
+def process_fv_logs(base_path) -> str:
+    # This function can run outside of the Tkinter main loop
+    config_path = os.path.join(base_path, 'Config.json')
     mathced_results_path = None # Initialize the variable to store the matched results file path
-    matching_jobs_info_file_path = None # Initialize the variable to store the matching jobs info file path
-
-    # Get config.json absolute path
-    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    matching_jobs_info_file_path = os.path.join(base_path, 'Output/matching_jobs_info.xlsx') # Initialize the variable to store the matching jobs info file path
   
     # Read the config.json file
     with open(config_path, 'r') as file:
@@ -238,7 +270,6 @@ def process_fv_logs() -> str:
         print(df_matching_jobs_info)
 
         # Save the matching jobs info to an Excel file
-        matching_jobs_info_file_path = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs_info.xlsx')
         df_matching_jobs_info.to_excel(matching_jobs_info_file_path, index=False)
 
         # Prompt the user to proceed with matching the jobs with parsed Measureresults
@@ -268,7 +299,7 @@ def process_fv_logs() -> str:
             # Convert the matching jobs list to a DataFrame
             if matching_jobs_list: # Check if the list is not empty
                 df_matching_jobs = pd.DataFrame(matching_jobs_list)
-                matched_jobs_output_file = os.path.join(os.path.dirname(__file__), 'Output/matching_jobs.xlsx')
+                matched_jobs_output_file = os.path.join(base_path, 'Output/matching_jobs.xlsx')
                 df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
             else:
                 print("No matching jobs found.")
@@ -325,6 +356,7 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     # Initialize a DataFrame to store the ATH measure results
     try:
         output_folder = ensure_output_folder()
+        
         ath_measure_results_file = os.path.join(output_folder, 'Measureresults_ATH.xlsx')
         if os.path.exists(ath_measure_results_file):
             # Prompt the user to append to the existing ATH measure results
@@ -670,4 +702,9 @@ def ath_success_value():
     
 # Print the contents of the config file
 if __name__ == '__main__':
-    process_fv_logs()
+    App = MyApp() # Create an instance of the MyApp class
+    base_path = os.path.dirname(__file__) # Get the base path
+
+    threading.Thread(target=process_fv_logs, args=(base_path,)).start() # Start the process_fv_logs function in a new thread
+    
+    App.mainloop() # Start the Tkinter main loop
