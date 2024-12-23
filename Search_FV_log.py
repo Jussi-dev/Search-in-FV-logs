@@ -299,8 +299,8 @@ def process_fv_logs(base_path) -> str:
             # Convert the matching jobs list to a DataFrame
             if matching_jobs_list: # Check if the list is not empty
                 df_matching_jobs = pd.DataFrame(matching_jobs_list)
-                matched_jobs_output_file = os.path.join(base_path, 'Output/matching_jobs.xlsx')
-                df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
+                # matched_jobs_output_file = os.path.join(base_path, 'Output/matching_jobs.xlsx')
+                # df_matching_jobs.to_excel(matched_jobs_output_file, index=False)
             else:
                 print("No matching jobs found.")
             
@@ -322,7 +322,7 @@ def process_fv_logs(base_path) -> str:
 
             if measureresult_df is not None:
                 # Filter the Measureresult dataframe to find matching entries
-                mathced_results_path = filter_measure_results(df_matching_jobs, measureresult_df, config['program_setup']['settings']['match_time_window_sec'])
+                mathced_results_path = filter_measure_results(df_matching_jobs, measureresult_df, base_path, config['program_setup']['settings']['match_time_window_sec'])
             else:
                 print("Measureresult dataframe is empty.")
         else:
@@ -338,7 +338,7 @@ def get_logs_folder_and_source(config):
     return logs_folder,source
 
 
-def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window_sec=180):
+def filter_measure_results(df_matching_jobs, measureresult_df, base_path, match_time_window_sec=180):
     if df_matching_jobs is None:
         print("No matching jobs to filter.")
         return
@@ -355,8 +355,7 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     matched_results = []
     # Initialize a DataFrame to store the ATH measure results
     try:
-        output_folder = ensure_output_folder()
-        
+        output_folder = ensure_output_folder(base_path)      
         ath_measure_results_file = os.path.join(output_folder, 'Measureresults_ATH.xlsx')
         if os.path.exists(ath_measure_results_file):
             # Prompt the user to append to the existing ATH measure results
@@ -366,8 +365,8 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
                 df_ath_measure_results = measureresult_df.copy()
         else: # Create a new DataFrame
             df_ath_measure_results = measureresult_df.copy()
-    except Exception as e:
-        print(f"Error reading or creating ATH measure results DataFrame: {e}")
+    except (FileNotFoundError, IOError) as e:
+        print(f"Error reading or creating ATH measure results DataFrame. Exception: {e}")
         df_ath_measure_results = measureresult_df.copy()
 
     # Iterate over each row in df_ath_measure_results and compare df_matching_jobs
@@ -400,7 +399,7 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     if matched_results:
         df_matched_results = pd.DataFrame(matched_results)
 
-        output_folder = ensure_output_folder()
+        output_folder = ensure_output_folder(base_path)
         
         # Save the matched results to an Excel file
         df_matched_results.to_excel(os.path.join(output_folder, 'matched_results.xlsx'), index=False)
@@ -414,9 +413,8 @@ def filter_measure_results(df_matching_jobs, measureresult_df, match_time_window
     # Return the 'mathced_results.xlsx' file path
     return os.path.join(output_folder, 'matched_results.xlsx')
 
-def ensure_output_folder():
-    root_folder = os.path.dirname(__file__) # Get the root folder
-    output_folder = os.path.join(root_folder, 'Output') # Define the output folder
+def ensure_output_folder(base_path):
+    output_folder = os.path.join(base_path, 'Output') # Define the output folder
     if not os.path.exists(output_folder): # Check if the 'Output' folder exists
         print("No 'Output' folder found. Creating 'Output' folder.")
         os.makedirs(output_folder)
